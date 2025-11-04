@@ -161,7 +161,7 @@
                             console.log("📡 偵測移動中，只有超過門檻才傳給 Unity");
 
                             // 👉 你可以自行調整門檻值，例如 2.0 = 約 2 m/s² 的加速度變化
-                            const threshold = 2.0;
+                            const threshold = 20.0;
 
                             setInterval(() => {
                                 if (!sending || !window.unityInstance) return;
