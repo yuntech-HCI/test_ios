@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>手機重力感測器讀值示範</title>
+  <style>
+    :root {
+      --fg: #0f172a; /* slate-900 */
+      --muted: #64748b; /* slate-500 */
+      --accent: #2563eb; /* blue-600 */
+      --bg: #f8fafc; /* slate-50 */
+    }
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: radial-gradient(1200px 800px at 50% -10%, #eef2ff 0%, #f8fafc 40%, #ffffff 100%);
+      color: var(--fg);
+    }
+    .wrap {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 16px;
+    }
+    .card {
+      width: min(680px, 92vw);
+      background: #fff;
+      border-radius: 24px;
+      box-shadow: 0 10px 40px rgba(2, 6, 23, 0.12);
+      padding: 24px;
+    }
+    .title {
+      margin: 0 0 12px 0;
+      font-size: clamp(20px, 2.2vw + 16px, 28px);
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .center-readout {
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 20px 12px;
+      border: 1px dashed #e2e8f0;
+      border-radius: 16px;
+      margin: 12px 0 16px 0;
+      min-height: 160px;
+    }
+    .val {
+      font-variant-numeric: tabular-nums;
+      line-height: 1.2;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      font-size: clamp(24px, 4.2vw + 10px, 48px);
+    }
+    .sub {
+      margin-top: 6px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 8px 0 4px;
+    }
+    button, .toggle {
+      appearance: none;
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 16px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    button.ghost {
+      background: #eef2ff;
+      color: var(--accent);
+    }
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #f1f5f9;
+      color: var(--fg);
+      justify-content: center;
+    }
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    .err {
+      margin-top: 8px;
+      color: #b91c1c;
+      font-size: 14px;
+      white-space: pre-wrap;
+    }
+    .kv {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 8px 12px;
+      align-items: baseline;
+      margin-top: 8px;
+      font-size: 15px;
+      color: #334155;
+    }
+    .kv b { font-variant-numeric: tabular-nums; }
+    .footer {
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" role="region" aria-label="重力感測器讀值面板">
+      <h1 class="title">重力感測器讀值（含重力）</h1>
+
+      <div class="center-readout" aria-live="polite">
+        <div class="val" id="mainText">尚未啟動</div>
+        <div class="sub" id="subText">請點「啟動感測器」並允許權限</div>
+      </div>
+
+      <div class="row">
+        <button class="primary" id="startBtn">啟動感測器</button>
+        <button class="ghost" id="stopBtn" disabled>停止</button>
+      </div>
+
+      <div class="row">
+        <button class="toggle" id="smoothBtn" aria-pressed="true">平滑處理：開</button>
+        <button class="toggle" id="gBtn" aria-pressed="false">顯示單位：m/s²</button>
+      </div>
+
+      <div class="kv">
+        <span>ax（含重力）</span><b id="ax">—</b>
+        <span>ay（含重力）</span><b id="ay">—</b>
+        <span>az（含重力）</span><b id="az">—</b>
+        <span>|g|大小</span><b id="mag">—</b>
+        <span>更新頻率</span><b id="hz">—</b>
+      </div>
+
+      <div class="muted">
+        • 讀值來源：<code>devicemotion.accelerationIncludingGravity</code><br/>
+        • iOS 需使用者互動後授權；請確保以 HTTPS 開啟本頁。
+      </div>
+
+      <div class="err" id="err"></div>
+
+      <div class="footer">© Demo • 可自由複用</div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const mainText = document.getElementById('mainText');
+      const subText  = document.getElementById('subText');
+      const axEl = document.getElementById('ax');
+      const ayEl = document.getElementById('ay');
+      const azEl = document.getElementById('az');
+      const magEl = document.getElementById('mag');
+      const hzEl  = document.getElementById('hz');
+      const errEl = document.getElementById('err');
+
+      const startBtn = document.getElementById('startBtn');
+      const stopBtn  = document.getElementById('stopBtn');
+      const smoothBtn= document.getElementById('smoothBtn');
+      const gBtn     = document.getElementById('gBtn');
+
+      let running = false;
+      let useSmoothing = true;
+      let showGUnits = false; // false=m/s^2, true=g
+      let lastTime = 0, frames = 0, fpsTimer = 0;
+
+      // Low-pass filter state
+      const alpha = 0.15; // smoothing factor (smaller = smoother)
+      let sx = 0, sy = 0, sz = 0;
+      
+      function fmt(n) { return (Math.abs(n) >= 100 ? n.toFixed(1) : n.toFixed(3)); }
+
+      function toG(mps2) { return mps2 / 9.80665; }
+
+      function setError(msg) {
+        errEl.textContent = msg || '';
+      }
+
+      function updateUI(ax, ay, az) {
+        // Magnitude
+        const mag = Math.sqrt(ax*ax + ay*ay + az*az);
+
+        const ux = showGUnits ? toG(ax) : ax;
+        const uy = showGUnits ? toG(ay) : ay;
+        const uz = showGUnits ? toG(az) : az;
+        const um = showGUnits ? toG(mag) : mag;
+
+        const unitLabel = showGUnits ? 'g' : 'm/s²';
+
+        mainText.textContent = `x: ${fmt(ux)}  y: ${fmt(uy)}  z: ${fmt(uz)} ${unitLabel}`;
+        subText.textContent  = `|g| = ${fmt(um)} ${unitLabel}`;
+
+        axEl.textContent = `${fmt(ux)} ${unitLabel}`;
+        ayEl.textContent = `${fmt(uy)} ${unitLabel}`;
+        azEl.textContent = `${fmt(uz)} ${unitLabel}`;
+        magEl.textContent= `${fmt(um)} ${unitLabel}`;
+      }
+
+      function onMotion(e) {
+        if (!running) return;
+
+        const ag = e.accelerationIncludingGravity || {};
+        // Some Androids use lowercase / nulls; coalesce to 0 when missing.
+        let x = Number(ag.x ?? 0);
+        let y = Number(ag.y ?? 0);
+        let z = Number(ag.z ?? 0);
+
+        if (useSmoothing) {
+          sx = sx + alpha * (x - sx);
+          sy = sy + alpha * (y - sy);
+          sz = sz + alpha * (z - sz);
+          x = sx; y = sy; z = sz;
+        }
+
+        updateUI(x, y, z);
+
+        // crude frequency estimate
+        const now = performance.now();
+        frames++;
+        if (!fpsTimer) fpsTimer = now;
+        if (now - fpsTimer >= 1000) {
+          hzEl.textContent = frames.toString() + ' Hz';
+          frames = 0;
+          fpsTimer = now;
+        }
+      }
+
+      async function requestPermissionIfNeeded() {
+        // iOS 13+ requires explicit permission after a user gesture
+        try {
+          if (typeof DeviceMotionEvent !== 'undefined' &&
+              typeof DeviceMotionEvent.requestPermission === 'function') {
+            const res = await DeviceMotionEvent.requestPermission();
+            if (res !== 'granted') {
+              throw new Error('未授權存取動態感測器（iOS）。');
+            }
+          }
+        } catch (err) {
+          throw err;
+        }
+      }
+
+      function start() {
+        if (running) return;
+        setError('');
+        if (typeof window.DeviceMotionEvent === 'undefined') {
+          setError('此裝置或瀏覽器不支援 DeviceMotion。請改用 Safari/Chrome 手機版，並確保為 HTTPS。');
+          return;
+        }
+        window.addEventListener('devicemotion', onMotion, { passive: true });
+        running = true;
+        startBtn.disabled = true;
+        stopBtn.disabled  = false;
+        mainText.textContent = '讀取中…';
+        subText.textContent  = '請持握手機，數值將即時顯示';
+      }
+
+      function stop() {
+        if (!running) return;
+        window.removeEventListener('devicemotion', onMotion, { passive: true });
+        running = false;
+        startBtn.disabled = false;
+        stopBtn.disabled  = true;
+        mainText.textContent = '已停止';
+        subText.textContent = '點「啟動感測器」重新開始';
+        hzEl.textContent = '—';
+      }
+
+      // Buttons
+      startBtn.addEventListener('click', async () => {
+        try {
+          await requestPermissionIfNeeded();
+          start();
+        } catch (e) {
+          setError(String(e && e.message ? e.message : e));
+        }
+      });
+      stopBtn.addEventListener('click', stop);
+
+      smoothBtn.addEventListener('click', () => {
+        useSmoothing = !useSmoothing;
+        smoothBtn.setAttribute('aria-pressed', String(useSmoothing));
+        smoothBtn.textContent = `平滑處理：${useSmoothing ? '開' : '關'}`;
+      });
+
+      gBtn.addEventListener('click', () => {
+        showGUnits = !showGUnits;
+        gBtn.setAttribute('aria-pressed', String(showGUnits));
+        gBtn.textContent = `顯示單位：${showGUnits ? 'g' : 'm/s²'}`;
+      });
+
+      // Auto-pause when tab hidden（省電/省資源）
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (running) stop();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
