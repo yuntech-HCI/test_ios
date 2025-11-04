@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="TemplateData/style.css">
 </head>
 
-
 <body>
     <div id="unity-container" class="unity-desktop">
         <canvas id="unity-canvas" width=960 height=600 tabindex="-1"></canvas>
@@ -26,8 +25,13 @@
         </div>
     </div>
 
+    <button id="enableMotion"
+            style="position:fixed;top:20px;left:20px;z-index:999;font-size:18px;padding:8px 16px;">
+        啟用感測器
+    </button>
+
     <script>
-        // 🧩 Safari WebGL2 修正（安全無害）
+        // Safari WebGL 修正
         if (!HTMLCanvasElement.prototype.getContextSafariWebGL2Fixed) {
             HTMLCanvasElement.prototype.getContextSafariWebGL2Fixed = function () {
                 return this.getContext("webgl2");
@@ -41,24 +45,6 @@
         const fullscreenButton = document.querySelector("#unity-fullscreen-button");
         const warningBanner = document.querySelector("#unity-warning");
 
-        function unityShowBanner(msg, type) {
-            function updateBannerVisibility() {
-                warningBanner.style.display = warningBanner.children.length ? "block" : "none";
-            }
-            const div = document.createElement("div");
-            div.innerHTML = msg;
-            warningBanner.appendChild(div);
-            if (type == "error") div.style = "background: red; padding: 10px;";
-            else {
-                if (type == "warning") div.style = "background: yellow; padding: 10px;";
-                setTimeout(() => {
-                    warningBanner.removeChild(div);
-                    updateBannerVisibility();
-                }, 5000);
-            }
-            updateBannerVisibility();
-        }
-
         const buildUrl = "Build";
         const loaderUrl = buildUrl + "/web.loader.js";
         const config = {
@@ -68,85 +54,62 @@
             streamingAssetsUrl: "StreamingAssets",
             companyName: "DefaultCompany",
             productName: "My project (2)",
-            productVersion: "0.1",
-            showBanner: unityShowBanner,
+            productVersion: "0.1"
         };
 
-        if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-            const meta = document.createElement("meta");
-            meta.name = "viewport";
-            meta.content =
-                "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes";
-            document.getElementsByTagName("head")[0].appendChild(meta);
-            container.className = "unity-mobile";
-            canvas.className = "unity-mobile";
-        } else {
-            canvas.style.width = "960px";
-            canvas.style.height = "600px";
-        }
-
         loadingBar.style.display = "block";
-
         const script = document.createElement("script");
         script.src = loaderUrl;
         script.onload = () => {
             createUnityInstance(canvas, config, (progress) => {
                 progressBarFull.style.width = 100 * progress + "%";
-            })
-                .then((unityInstance) => {
-                    loadingBar.style.display = "none";
-                    fullscreenButton.onclick = () => unityInstance.SetFullscreen(1);
+            }).then((unityInstance) => {
+                loadingBar.style.display = "none";
+                fullscreenButton.onclick = () => unityInstance.SetFullscreen(1);
+                console.log("✅ Unity WebGL 載入完成");
 
-                    console.log("✅ Unity WebGL 載入完成");
+                // ------------------------------
+                // 📱 加速度感測器部分
+                // ------------------------------
+                let accel = { x: 0, y: 0, z: 0 };
 
-                    // ------------------------------
-                    // 📱 重力感測器：DeviceMotionEvent
-                    // ------------------------------
-                    let accel = { x: 0, y: 0, z: 0 };
-
-                    // 有些瀏覽器（特別是 iOS）需要使用者同意才能取感測器
-                    function requestSensorPermission() {
-                        if (typeof DeviceMotionEvent.requestPermission === "function") {
-                            DeviceMotionEvent.requestPermission()
-                                .then((response) => {
-                                    if (response === "granted") {
-                                        window.addEventListener("devicemotion", handleMotion);
-                                    } else {
-                                        console.warn("❌ 使用者拒絕授權加速度感測器");
-                                    }
-                                })
-                                .catch(console.error);
-                        } else {
-                            // Android 或桌面瀏覽器
-                            window.addEventListener("devicemotion", handleMotion);
-                        }
+                function handleMotion(event) {
+                    if (event.accelerationIncludingGravity) {
+                        accel.x = event.accelerationIncludingGravity.x || 0;
+                        accel.y = event.accelerationIncludingGravity.y || 0;
+                        accel.z = event.accelerationIncludingGravity.z || 0;
                     }
+                }
 
-                    function handleMotion(event) {
-                        if (event.accelerationIncludingGravity) {
-                            accel.x = event.accelerationIncludingGravity.x || 0;
-                            accel.y = event.accelerationIncludingGravity.y || 0;
-                            accel.z = event.accelerationIncludingGravity.z || 0;
-                        }
+                // 每 0.1 秒發送一次加速度給 Unity
+                setInterval(() => {
+                    const msg = JSON.stringify(accel);
+                    unityInstance.SendMessage("Receiver", "OnWebMessage", msg);
+                }, 100);
+
+                // 🔘 使用者點擊按鈕時請求權限
+                document.getElementById("enableMotion").addEventListener("click", () => {
+                    if (typeof DeviceMotionEvent.requestPermission === "function") {
+                        DeviceMotionEvent.requestPermission()
+                            .then(response => {
+                                if (response === "granted") {
+                                    window.addEventListener("devicemotion", handleMotion);
+                                    document.getElementById("enableMotion").style.display = "none";
+                                    console.log("✅ 已授權感測器");
+                                } else {
+                                    console.warn("❌ 使用者拒絕授權");
+                                }
+                            })
+                            .catch(console.error);
+                    } else {
+                        // Android 或其他平台
+                        window.addEventListener("devicemotion", handleMotion);
+                        document.getElementById("enableMotion").style.display = "none";
                     }
-
-                    // 每 0.1 秒發送一次加速度給 Unity
-                    setInterval(() => {
-                        const msg = JSON.stringify(accel);
-                        unityInstance.SendMessage("Receiver", "OnWebMessage", msg);
-                    }, 100);
-
-                    // 啟動感測器監聽
-                    requestSensorPermission();
-                })
-                .catch((message) => {
-                    alert(message);
                 });
+            }).catch((message) => alert(message));
         };
-
         document.body.appendChild(script);
     </script>
-
 </body>
 </html>
-
