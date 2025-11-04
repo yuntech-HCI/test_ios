@@ -115,6 +115,35 @@
                   unityInstance.SetFullscreen(1);
                 };
 
+                // Unloading web content from DOM so that browser GC can run can be tricky to get right.
+                // This code snippet shows how to correctly implement a Unity content Unload mechanism to a web page.
+
+                // Unloading Unity content enables a web page to reclaim the memory used by Unity, e.g. for
+                // the purpose of later loading another Unity content instance on the _same_ web page.
+
+                // When using this functionality, take caution to carefully make sure to clear all JavaScript code,
+                // DOM element and event handler references to the old content you may have retained, or
+                // otherwise the browser's garbage collector will be unable to reclaim the old page.
+
+                // N.b. Unity content does _not_ need to be manually unloaded when the user is navigating away from
+                // the current page to another web page. The browser will take care to clear memory of old visited
+                // pages automatically. This functionality is only needed if you want to switch between loading
+                // multiple Unity builds on a single web page.
+                var quit = document.createElement("button");
+                quit.style = "margin-left: 5px; background-color: lightgray; border: none; padding: 5px; cursor: pointer";
+                quit.innerHTML = "Unload";
+                document.querySelector("#unity-build-title").appendChild(quit);
+                quit.onclick = () => {
+                  // Quit Unity application execution
+                  unityInstance.Quit().then(() => {
+                    // Remove DOM elements from the page so GC can run
+                    document.querySelector("#unity-container").remove();
+                    canvas = null;
+                    // Remover script elements from the page so GC can run
+                    script.remove();
+                    script = null;
+                  });
+                };
               }).catch((message) => {
                 alert(message);
               });
@@ -123,149 +152,5 @@
       document.body.appendChild(script);
 
     </script>
-
-<script>
-/* ============================================================
-   Unity WebGL 感測器整合（2025 版）
-   支援：iOS Safari / Android Chrome / 桌機偵錯模式
-   功能：
-   - 自動偵測平台與 API 支援
-   - iOS 顯示授權按鈕
-   - Android 自動啟用
-   - Debug Log 顯示於畫面下方
-   - 將感測資料送回 Unity：Main Camera → OnSensorData(json)
-   ============================================================ */
-
-function logToScreen(msg) {
-  let div = document.getElementById("debugLog");
-  if (!div) {
-    div = document.createElement("div");
-    div.id = "debugLog";
-    div.style.position = "fixed";
-    div.style.bottom = "0";
-    div.style.left = "0";
-    div.style.right = "0";
-    div.style.background = "rgba(0,0,0,0.8)";
-    div.style.color = "#00ff00";
-    div.style.fontFamily = "monospace";
-    div.style.fontSize = "14px";
-    div.style.padding = "8px";
-    div.style.zIndex = "99999";
-    div.style.maxHeight = "40vh";
-    div.style.overflowY = "auto";
-    document.body.appendChild(div);
-  }
-  const line = document.createElement("div");
-  line.textContent = "👉 " + msg;
-  div.appendChild(line);
-  console.log(msg);
-}
-
-/* 主流程 ---------------------------------------------------- */
-window.RequestSensorPermission = async function () {
-  logToScreen("檢查感測器授權狀態...");
-
-  const hasMotionEvent = typeof DeviceMotionEvent !== "undefined";
-  const hasPermissionAPI = hasMotionEvent && typeof DeviceMotionEvent.requestPermission === "function";
-
-  logToScreen(`DeviceMotionEvent: ${hasMotionEvent}, requestPermission: ${hasPermissionAPI}`);
-
-  if (!hasMotionEvent) {
-    logToScreen("❌ 此裝置不支援 DeviceMotionEvent");
-    return;
-  }
-
-  // iOS Safari (需使用者互動)
-  if (hasPermissionAPI) {
-    logToScreen("偵測到 iOS Safari，準備顯示授權按鈕");
-
-    const button = document.createElement("button");
-    button.innerText = "允許感測器權限";
-    button.style.fontSize = "18px";
-    button.style.margin = "20px";
-    button.style.padding = "12px 20px";
-    button.style.borderRadius = "8px";
-    button.style.border = "none";
-    button.style.background = "#1976d2";
-    button.style.color = "#fff";
-    button.style.cursor = "pointer";
-    document.body.appendChild(button);
-
-    button.onclick = async () => {
-      try {
-        const response = await DeviceMotionEvent.requestPermission();
-        logToScreen("授權回應: " + response);
-        if (response === "granted") {
-          button.remove();
-          window.StartSensorListening();
-        } else {
-          alert("❌ 未授權感測器，請重新整理並允許。");
-        }
-      } catch (err) {
-        alert("⚠️ 授權錯誤：" + err);
-      }
-    };
-
-  } else {
-    // Android / 其他平台
-    logToScreen("Android 或其他平台：直接啟動感測器");
-    window.StartSensorListening();
-  }
-};
-
-/* 啟動感測事件監聽 ----------------------------------------- */
-window.StartSensorListening = function () {
-  if (window._sensorStarted) return;
-  window._sensorStarted = true;
-
-  logToScreen("📡 啟動感測事件監聽中...");
-
-  window.addEventListener("devicemotion", (e) => {
-    if (!e.accelerationIncludingGravity) {
-      logToScreen("⚠️ 沒有加速度資料，可能被封鎖或權限未授予");
-      return;
-    }
-
-    const accel = e.accelerationIncludingGravity;
-    const gyro = e.rotationRate || { alpha: 0, beta: 0, gamma: 0 };
-
-    const json = JSON.stringify({
-      ax: accel.x || 0,
-      ay: accel.y || 0,
-      az: accel.z || 0,
-      gx: gyro.alpha || 0,
-      gy: gyro.beta || 0,
-      gz: gyro.gamma || 0
-    });
-
-    logToScreen(`ax:${accel.x?.toFixed(2)} ay:${accel.y?.toFixed(2)} az:${accel.z?.toFixed(2)}`);
-
-    if (window.unityInstance && window.unityInstance.SendMessage) {
-      window.unityInstance.SendMessage("Main Camera", "OnSensorData", json);
-    }
-  });
-
-  // 額外註冊方向事件（可用於除錯）
-  window.addEventListener("deviceorientation", (e) => {
-    logToScreen(`orientation α:${e.alpha?.toFixed(1)} β:${e.beta?.toFixed(1)} γ:${e.gamma?.toFixed(1)}`);
-  });
-};
-
-/* 確保 Unity Instance 可用 ---------------------------------- */
-(function () {
-  const _createUnityInstance = window.createUnityInstance;
-  window.createUnityInstance = function (canvas, config, onProgress) {
-    return _createUnityInstance(canvas, config, onProgress).then((unity) => {
-      logToScreen("✅ Unity instance 初始化完成");
-      window.unityInstance = unity;
-      return unity;
-    });
-  };
-})();
-</script>
-
-
-
-
   </body>
 </html>
