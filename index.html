@@ -158,17 +158,36 @@
                             btn.textContent = "✅ 感測器已啟用";
                             btn.disabled = true;
                             sending = true;
-                            console.log("📡 每 0.1 秒傳送資料給 Unity");
+                            console.log("📡 偵測移動中，只有超過門檻才傳給 Unity");
+
+                            // 👉 你可以自行調整門檻值，例如 2.0 = 約 2 m/s² 的加速度變化
+                            const threshold = 2.0;
 
                             setInterval(() => {
-                                if (sending && window.unityInstance) {
-                                    window.unityInstance.SendMessage("Receiver", "OnWebMessage", JSON.stringify(accel));
+                                if (!sending || !window.unityInstance) return;
+
+                                // 計算總加速度大小（含重力）
+                                const magnitude = Math.sqrt(
+                                    accel.x * accel.x +
+                                    accel.y * accel.y +
+                                    accel.z * accel.z
+                                );
+
+                                // 👉 當超過門檻時才傳送
+                                if (magnitude > threshold) {
+                                    window.unityInstance.SendMessage(
+                                        "Receiver",
+                                        "OnWebMessage",
+                                        JSON.stringify(accel)
+                                    );
+                                    console.log(`🚀 傳送給 Unity：|g|=${magnitude.toFixed(2)}`);
                                 }
                             }, 100);
                         } catch (e) {
                             alert("❌ 感測器授權失敗：" + e.message);
                         }
                     });
+
                 }
             }, 500);
         });
